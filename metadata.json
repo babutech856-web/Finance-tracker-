@@ -1,0 +1,6 @@
+{
+  "name": "Finance Tracker",
+  "description": "Modern Personal Finance Tracker with Nepali Rupee formatting, cash flow charts, category budgets, and instant transaction recording.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
