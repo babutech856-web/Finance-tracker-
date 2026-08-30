@@ -14,17 +14,52 @@ import com.example.data.repository.FinanceRepository
 import com.example.util.CurrencyFormatter
 import com.example.util.DateTimeUtils
 import com.example.util.FinancialInsightsEngine
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+
+private data class FilterState(
+    val currency: CurrencyConfig = CurrencyConfig.NPR,
+    val timeRange: TimeRange = TimeRange.SEVEN_DAYS,
+    val searchQuery: String = "",
+    val typeFilter: TransactionFilter = TransactionFilter.ALL,
+    val dateFilter: DateFilter = DateFilter.ALL,
+    val categoryFilter: String? = null,
+    val accountFilter: String? = null
+)
+
+private data class DialogState(
+    val isAddTransactionSheetOpen: Boolean = false,
+    val editingTransaction: TransactionEntity? = null,
+    val prefillType: TransactionType = TransactionType.EXPENSE,
+    val isBudgetDialogOpen: Boolean = false,
+    val isAccountDialogOpen: Boolean = false,
+    val isCategoryDialogOpen: Boolean = false,
+    val isExportDialogOpen: Boolean = false,
+    val exportContent: String = "",
+    val exportType: String = "JSON",
+    val snackbarMessage: String? = null,
+    val lastDeletedTransaction: TransactionEntity? = null,
+    val darkModePreference: String = "LIGHT",
+    val isAppLockEnabled: Boolean = false,
+    val isUnlocked: Boolean = true
+)
+
+private data class DataState(
+    val transactions: List<TransactionEntity> = emptyList(),
+    val accounts: List<AccountEntity> = emptyList(),
+    val categories: List<CategoryEntity> = emptyList(),
+    val budgets: List<BudgetEntity> = emptyList()
+)
 
 class FinanceViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -67,59 +102,105 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    val uiState: StateFlow<FinanceUiState> = combine(
+    private val dataFlow = combine(
         repository.allTransactions,
         repository.allAccounts,
         repository.allCategories,
-        repository.allBudgets,
+        repository.allBudgets
+    ) { tx, acc, cat, bud ->
+        DataState(tx, acc, cat, bud)
+    }
+
+    private val filterFlow = combine(
         _currency,
         _selectedTimeRange,
         _searchQuery,
         _typeFilter,
         _dateFilter,
-        _selectedCategoryFilter
+        _selectedCategoryFilter,
+        _selectedAccountFilter
     ) { params ->
-        val transactions = params[0] as List<TransactionEntity>
-        val accounts = params[1] as List<AccountEntity>
-        val categories = params[2] as List<CategoryEntity>
-        val budgets = params[3] as List<BudgetEntity>
-        val currency = params[4] as CurrencyConfig
-        val timeRange = params[5] as TimeRange
-        val searchQuery = params[6] as String
-        val typeFilter = params[7] as TransactionFilter
-        val dateFilter = params[8] as DateFilter
-        val categoryFilter = params[9] as String?
-
-        buildUiState(
-            transactions = transactions,
-            accounts = accounts,
-            categories = categories,
-            budgets = budgets,
-            currency = currency,
-            timeRange = timeRange,
-            searchQuery = searchQuery,
-            typeFilter = typeFilter,
-            dateFilter = dateFilter,
-            categoryFilter = categoryFilter
+        FilterState(
+            currency = params[0] as CurrencyConfig,
+            timeRange = params[1] as TimeRange,
+            searchQuery = params[2] as String,
+            typeFilter = params[3] as TransactionFilter,
+            dateFilter = params[4] as DateFilter,
+            categoryFilter = params[5] as String?,
+            accountFilter = params[6] as String?
         )
-    }.stateIn(
+    }
+
+    private val dialogFlow = combine(
+        combine(
+            _isAddTransactionSheetOpen,
+            _editingTransaction,
+            _prefillType,
+            _isBudgetDialogOpen,
+            _isAccountDialogOpen
+        ) { a, b, c, d, e -> listOf(a, b, c, d, e) },
+        combine(
+            _isCategoryDialogOpen,
+            _isExportDialogOpen,
+            _exportContent,
+            _exportType,
+            _snackbarMessage
+        ) { a, b, c, d, e -> listOf(a, b, c, d, e) },
+        combine(
+            _lastDeletedTransaction,
+            _darkModePreference,
+            _isAppLockEnabled,
+            _isUnlocked
+        ) { a, b, c, d -> listOf(a, b, c, d) }
+    ) { group1, group2, group3 ->
+        DialogState(
+            isAddTransactionSheetOpen = group1[0] as Boolean,
+            editingTransaction = group1[1] as TransactionEntity?,
+            prefillType = group1[2] as TransactionType,
+            isBudgetDialogOpen = group1[3] as Boolean,
+            isAccountDialogOpen = group1[4] as Boolean,
+            isCategoryDialogOpen = group2[0] as Boolean,
+            isExportDialogOpen = group2[1] as Boolean,
+            exportContent = group2[2] as String,
+            exportType = group2[3] as String,
+            snackbarMessage = group2[4] as String?,
+            lastDeletedTransaction = group3[0] as TransactionEntity?,
+            darkModePreference = group3[1] as String,
+            isAppLockEnabled = group3[2] as Boolean,
+            isUnlocked = group3[3] as Boolean
+        )
+    }
+
+    val uiState: StateFlow<FinanceUiState> = combine(
+        dataFlow,
+        filterFlow,
+        dialogFlow
+    ) { data, filter, dialog ->
+        buildUiState(data, filter, dialog)
+    }.flowOn(Dispatchers.Default)
+    .stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = FinanceUiState()
     )
 
     private fun buildUiState(
-        transactions: List<TransactionEntity>,
-        accounts: List<AccountEntity>,
-        categories: List<CategoryEntity>,
-        budgets: List<BudgetEntity>,
-        currency: CurrencyConfig,
-        timeRange: TimeRange,
-        searchQuery: String,
-        typeFilter: TransactionFilter,
-        dateFilter: DateFilter,
-        categoryFilter: String?
+        data: DataState,
+        filter: FilterState,
+        dialog: DialogState
     ): FinanceUiState {
+        val transactions = data.transactions
+        val accounts = data.accounts
+        val categories = data.categories
+        val budgets = data.budgets
+        val currency = filter.currency
+        val timeRange = filter.timeRange
+        val searchQuery = filter.searchQuery
+        val typeFilter = filter.typeFilter
+        val dateFilter = filter.dateFilter
+        val categoryFilter = filter.categoryFilter
+        val accountFilter = filter.accountFilter
+
         // 1. Balance Calculations
         val totalOpeningBalance = accounts.sumOf { it.openingBalance }
         val totalIncome = transactions.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
@@ -264,7 +345,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             }
 
             val matchesCategory = categoryFilter == null || t.categoryId == categoryFilter
-            val matchesAccount = _selectedAccountFilter.value == null || t.fromAccount == _selectedAccountFilter.value
+            val matchesAccount = accountFilter == null || t.fromAccount == accountFilter
 
             matchesQuery && matchesType && matchesDate && matchesCategory && matchesAccount
         }
@@ -276,9 +357,9 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         return FinanceUiState(
             isLoading = false,
             currency = currency,
-            darkModePreference = _darkModePreference.value,
-            isAppLockEnabled = _isAppLockEnabled.value,
-            isUnlocked = _isUnlocked.value,
+            darkModePreference = dialog.darkModePreference,
+            isAppLockEnabled = dialog.isAppLockEnabled,
+            isUnlocked = dialog.isUnlocked,
             transactions = transactions,
             accounts = accounts,
             categories = categories,
@@ -303,19 +384,19 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             typeFilter = typeFilter,
             dateFilter = dateFilter,
             selectedCategoryFilter = categoryFilter,
-            selectedAccountFilter = _selectedAccountFilter.value,
+            selectedAccountFilter = accountFilter,
             filteredTransactionsGrouped = groupedTransactions,
-            isAddTransactionSheetOpen = _isAddTransactionSheetOpen.value,
-            editingTransaction = _editingTransaction.value,
-            prefillType = _prefillType.value,
-            isBudgetDialogOpen = _isBudgetDialogOpen.value,
-            isAccountDialogOpen = _isAccountDialogOpen.value,
-            isCategoryDialogOpen = _isCategoryDialogOpen.value,
-            isExportDialogOpen = _isExportDialogOpen.value,
-            exportContent = _exportContent.value,
-            exportType = _exportType.value,
-            snackbarMessage = _snackbarMessage.value,
-            lastDeletedTransaction = _lastDeletedTransaction.value
+            isAddTransactionSheetOpen = dialog.isAddTransactionSheetOpen,
+            editingTransaction = dialog.editingTransaction,
+            prefillType = dialog.prefillType,
+            isBudgetDialogOpen = dialog.isBudgetDialogOpen,
+            isAccountDialogOpen = dialog.isAccountDialogOpen,
+            isCategoryDialogOpen = dialog.isCategoryDialogOpen,
+            isExportDialogOpen = dialog.isExportDialogOpen,
+            exportContent = dialog.exportContent,
+            exportType = dialog.exportType,
+            snackbarMessage = dialog.snackbarMessage,
+            lastDeletedTransaction = dialog.lastDeletedTransaction
         )
     }
 
@@ -706,6 +787,10 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     fun toggleAppLock(enable: Boolean) {
         _isAppLockEnabled.value = enable
         _snackbarMessage.value = if (enable) "App PIN Security Enabled" else "App Security Disabled"
+    }
+
+    fun unlockApp() {
+        _isUnlocked.value = true
     }
 
     fun clearSnackbar() {

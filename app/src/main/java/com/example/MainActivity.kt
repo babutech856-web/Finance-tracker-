@@ -19,7 +19,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // Enable immersive full-screen mode: hide system navigation, status bar, battery, time, network icons
+        // Enable immersive full-screen mode: hide system bars safely
         val windowInsetsController = WindowCompat.getInsetsController(window, window.decorView)
         windowInsetsController.systemBarsBehavior =
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
@@ -29,13 +29,6 @@ class MainActivity : ComponentActivity() {
             MainAppScaffold(viewModel = viewModel)
         }
     }
-
-    override fun onWindowFocusChanged(hasFocus: Boolean) {
-        super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) {
-            val windowInsetsController = WindowCompat.getInsetsController(window, window.decorView)
-            windowInsetsController.hide(WindowInsetsCompat.Type.systemBars())
-        }
-    }
 }
+
 
