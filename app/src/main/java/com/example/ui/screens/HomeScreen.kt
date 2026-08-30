@@ -199,14 +199,17 @@ fun HomeScreen(
 
                         Spacer(modifier = Modifier.height(18.dp))
 
-                        // Income / Expense Pills
+                        // Income / Expense Pills (Clickable)
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             // Income Pill
                             Surface(
-                                modifier = Modifier.weight(1f),
+                                onClick = { viewModel.openAddTransactionSheet(TransactionType.INCOME) },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("hero_income_pill"),
                                 shape = RoundedCornerShape(16.dp),
                                 color = IncomeGreenContainer.copy(alpha = 0.7f)
                             ) {
@@ -247,7 +250,10 @@ fun HomeScreen(
 
                             // Expense Pill
                             Surface(
-                                modifier = Modifier.weight(1f),
+                                onClick = { viewModel.openAddTransactionSheet(TransactionType.EXPENSE) },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("hero_expense_pill"),
                                 shape = RoundedCornerShape(16.dp),
                                 color = ExpenseRedContainer.copy(alpha = 0.7f)
                             ) {

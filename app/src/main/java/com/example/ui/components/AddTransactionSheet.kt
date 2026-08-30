@@ -101,14 +101,14 @@ fun AddTransactionSheet(
     val context = LocalContext.current
     val editing = uiState.editingTransaction
 
-    var selectedType by remember { mutableStateOf(editing?.type ?: uiState.prefillType) }
-    var amountInput by remember { mutableStateOf(editing?.let { if (it.amount % 1 == 0.0) it.amount.toLong().toString() else it.amount.toString() } ?: "") }
-    var descriptionInput by remember { mutableStateOf(editing?.description ?: "") }
-    var selectedCategoryId by remember { mutableStateOf(editing?.categoryId ?: "") }
-    var selectedAccount by remember { mutableStateOf(editing?.fromAccount ?: (uiState.accounts.firstOrNull()?.name ?: "Cash in Hand")) }
-    var toAccount by remember { mutableStateOf(editing?.toAccount ?: (uiState.accounts.getOrNull(1)?.name ?: "Nabil Bank")) }
-    var dateMillis by remember { mutableLongStateOf(editing?.dateMillis ?: System.currentTimeMillis()) }
-    var notesInput by remember { mutableStateOf(editing?.notes ?: "") }
+    var selectedType by remember(editing, uiState.prefillType) { mutableStateOf(editing?.type ?: uiState.prefillType) }
+    var amountInput by remember(editing) { mutableStateOf(editing?.let { if (it.amount % 1 == 0.0) it.amount.toLong().toString() else it.amount.toString() } ?: "") }
+    var descriptionInput by remember(editing) { mutableStateOf(editing?.description ?: "") }
+    var selectedCategoryId by remember(editing) { mutableStateOf(editing?.categoryId ?: "") }
+    var selectedAccount by remember(editing) { mutableStateOf(editing?.fromAccount ?: (uiState.accounts.firstOrNull()?.name ?: "Cash in Hand")) }
+    var toAccount by remember(editing) { mutableStateOf(editing?.toAccount ?: (uiState.accounts.getOrNull(1)?.name ?: "Nabil Bank")) }
+    var dateMillis by remember(editing) { mutableLongStateOf(editing?.dateMillis ?: System.currentTimeMillis()) }
+    var notesInput by remember(editing) { mutableStateOf(editing?.notes ?: "") }
 
     var accountDropdownExpanded by remember { mutableStateOf(false) }
     var toAccountDropdownExpanded by remember { mutableStateOf(false) }
@@ -241,8 +241,9 @@ fun AddTransactionSheet(
                         OutlinedTextField(
                             value = amountInput,
                             onValueChange = { input ->
-                                if (input.count { it == '.' } <= 1 && input.all { it.isDigit() || it == '.' }) {
-                                    amountInput = input
+                                val filtered = input.filter { it.isDigit() || it == '.' }
+                                if (filtered.count { it == '.' } <= 1) {
+                                    amountInput = filtered
                                 }
                             },
                             placeholder = { Text("0", fontSize = 28.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)) },
@@ -260,9 +261,43 @@ fun AddTransactionSheet(
                                 unfocusedContainerColor = Color.Transparent
                             ),
                             modifier = Modifier
-                                .width(200.dp)
+                                .fillMaxWidth(0.7f)
                                 .testTag("amount_input_field")
                         )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Quick Suggested Amount Chips (Rs. 100, Rs. 500, Rs. 1,000, Rs. 5,000, Rs. 10,000)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally)
+                    ) {
+                        listOf(100, 500, 1000, 2000, 5000, 10000).forEach { quickVal ->
+                            Surface(
+                                onClick = {
+                                    val cur = amountInput.toDoubleOrNull() ?: 0.0
+                                    amountInput = (cur + quickVal).toLong().toString()
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                color = MaterialTheme.colorScheme.surface,
+                                tonalElevation = 1.dp
+                            ) {
+                                Text(
+                                    text = "+$quickVal",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = when (selectedType) {
+                                        TransactionType.EXPENSE -> ExpenseRed
+                                        TransactionType.INCOME -> IncomeGreen
+                                        TransactionType.TRANSFER -> IndigoAccent
+                                    },
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                )
+                            }
+                        }
                     }
                 }
             }
